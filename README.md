@@ -1,10 +1,6 @@
 # GodoLM
 
-A high-level interface for invoking language models within Godot for runtime procedural generation applications.
-
-## Overview
-
-GodoLM provides a simple way to integrate language models with godot projects in procgen contexts.
+A high-level interface for invoking language models in Godot games, using JSONSchema based constraints to parse responses into arbitrary resources.
 
 ## Installation
 
@@ -55,11 +51,10 @@ const PROPERTY_DESCRIPTIONS = {
 
 # Set the target resource in your connection
 $LanguageModelConnection.target_resource = Sword.new()
-
 # Now responses will be parsed into Sword resource instances
-# Add context and send the request.
-$LanguageModelConnection.add_context("Something found at the bottom of a lake.")
-var sword: Sword = await $LanguageModelConnection.send_request()
+request = $LanguageModelConnection.create_request()
+request.add_context("Something found at the bottom of a lake.")
+var sword: Sword = await $LanguageModelConnection.send_request(request)
 print("Generated: ", sword.sword_name, " - ", sword.description)
 ```
 
