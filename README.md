@@ -51,17 +51,23 @@ const PROPERTY_DESCRIPTIONS = {
 @export var accent_color: Color
 @export var hilt_color: Color
 ```
-Then in the script where you want to generate a sword:
-
+Then use the LanguageModelRequest Node to create requests and parse responses:
 ```gdscript
+# Send a request.
+func send_sword_request():
+    var request = $LanguageModelConnection.create_request()
+    request.add_context("Something found at the bottom of a lake.")
+    $LanguageModelConnection.send_request(request)
 
-# Set the target resource in your connection
-$LanguageModelConnection.target_resource = Sword.new()
-# Now responses will be parsed into Sword resource instances
-request = $LanguageModelConnection.create_request()
-request.add_context("Something found at the bottom of a lake.")
-var sword: Sword = await $LanguageModelConnection.send_request(request)
-print("Generated: ", sword.sword_name, " - ", sword.description)
+# Handle the completed request when $LanguageModelConnection completes the request.
+func _on_request_completed(response, request_id):
+    var sword = response as Sword
+    if sword:
+        print("Received sword: ", sword.sword_name)
+        print("Description: ", sword.description)
+        print("Materials: ", sword.blade_material, ", ", sword.hilt_material)
+        print("Colors: ", sword.blade_color.to_html(), ", ", sword.accent_color.to_html())
+        
 ```
 
 ## Providers
