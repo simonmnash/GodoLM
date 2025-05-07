@@ -20,6 +20,8 @@ A high-level interface for invoking language models in Godot games, using JSONSc
 
 GodoLM supports structured responses using JSON Schema:
 
+Define a resource:
+
 ```gdscript
 # Define a resource for structured data
 class_name Sword
@@ -48,6 +50,10 @@ const PROPERTY_DESCRIPTIONS = {
 @export var blade_color: Color
 @export var accent_color: Color
 @export var hilt_color: Color
+```
+Then in the script where you want to generate a sword:
+
+```gdscript
 
 # Set the target resource in your connection
 $LanguageModelConnection.target_resource = Sword.new()
