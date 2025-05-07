@@ -65,9 +65,7 @@ func _on_request_completed(response, request_id):
     if sword:
         print("Received sword: ", sword.sword_name)
         print("Description: ", sword.description)
-        print("Materials: ", sword.blade_material, ", ", sword.hilt_material)
-        print("Colors: ", sword.blade_color.to_html(), ", ", sword.accent_color.to_html())
-        
+        print("Materials: ", sword.blade_material, ", ", sword.hilt_material)        
 ```
 
 ## Providers
