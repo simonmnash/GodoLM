@@ -2,6 +2,8 @@
 
 A high-level interface for invoking language models in Godot games, using JSONSchema based constraints to parse responses into arbitrary resources.
 
+This is a lightly maintained side project that I periodically update based on the development needs of a game I am working on. It is primarily designed for easy experimentation.
+
 ## Installation
 
 1. Download the GodoLM addon from the Godot Asset Library or from GitHub
@@ -13,8 +15,9 @@ A high-level interface for invoking language models in Godot games, using JSONSc
 ### Basic Setup
 
 1. Add a `LanguageModelConnection` node to your scene
-2. Configure a provider (e.g., OpenRouterProvider) with your API key.
-4. Create requests - add context and a target resource type, and get a new resource back.
+2. Configure a provider (e.g., MistralProvider) with your API key.
+4. Create requests - add context and a target resource type.
+5. Send the request and get a new resource back.
 
 ## Code Example
 
@@ -70,4 +73,4 @@ func _on_request_completed(response, request_id):
 
 ## Providers
 
-GodoLM currently supports OpenRouter.
+GodoLM currently supports Mistral and OpenRouter. I am primarily using the MistralProvider in my project so it is the provider that has seen the most testing.

@@ -4,18 +4,10 @@ class_name OpenRouterProvider
 
 func _init():
 	host_base_url = "https://openrouter.ai/api/v1"
-	model_slugs = ["mistralai/ministral-3b", "mistralai/mistral-small-3.1-24b-instruct"]
-
-# Override to handle OpenRouter specific parsing
-static func parse_llm_response(response_text: String) -> String:
-	# Check if response is wrapped in markdown code blocks
-	if response_text.begins_with("```") and response_text.ends_with("```"):
-		# Find the JSON content between backticks
-		var start_idx = response_text.find("\n", response_text.find("```")) + 1
-		var end_idx = response_text.rfind("```")
-		if start_idx > 0 and end_idx > start_idx:
-			return response_text.substr(start_idx, end_idx - start_idx).strip_edges()
-	return response_text
+	model_slugs = ["mistralai/ministral-3b",
+				   "mistralai/ministral-8b",
+				   "mistralai/mistral-small-3.1-24b-instruct",
+				   "mistralai/mistral-medium-3"]
 
 # Override to handle OpenRouter specific JSON extraction
 static func extract_json(text: String):

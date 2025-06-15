@@ -16,6 +16,7 @@ var max_tokens: int = 1024
 var response_format = null
 var tools: Array = []
 var tool_choice: String = "none"
+var n: int = 1  # Number of choices to generate
 
 func _init(provider: Provider) -> void:
 	for msg in context:

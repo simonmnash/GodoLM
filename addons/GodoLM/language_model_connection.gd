@@ -6,8 +6,48 @@ class_name LanguageModelConnection
 signal request_completed(response, request_id)
 signal request_failed(error, request_id)
 
-@export var provider : Provider
-@export var model : String
+@export var provider : Provider:
+	set(new_provider):
+		provider = new_provider
+		notify_property_list_changed()  # Trigger property list update when provider changes
+
+# Custom property handling for model selection
+var _model = ""
+var _property_list = []
+
+func _get(property):
+	if property == "model":
+		return _model
+
+func _set(property, value):
+	if property == "model":
+		_model = value
+		return true
+	return false
+
+func _get_property_list():
+	_property_list = []
+	
+	if provider != null and provider.model_slugs.size() > 0:
+		# Add model property with enum hint
+		var models_hint_string = ",".join(provider.model_slugs)
+		_property_list.append({
+			"name": "model",
+			"type": TYPE_STRING,
+			"usage": PROPERTY_USAGE_DEFAULT,
+			"hint": PROPERTY_HINT_ENUM,
+			"hint_string": models_hint_string
+		})
+	else:
+		# Fallback to regular string if no provider or no models
+		_property_list.append({
+			"name": "model",
+			"type": TYPE_STRING,
+			"usage": PROPERTY_USAGE_DEFAULT
+		})
+	
+	return _property_list
+
 @export var target_resource: Resource  # Reference to instance of a resource
 
 var active_requests = {}
@@ -15,12 +55,12 @@ var request_counter = 0
 
 func _ready():
 	add_to_group("language_model_connection")
-	
 
 func create_request() -> LanguageModelRequest:
-	assert(self.model in provider.model_slugs)
+	assert(provider != null, "Provider is required")
+	assert(_model in provider.model_slugs, "Selected model is not supported by the provider")
 	var req = LanguageModelRequest.new(self.provider)
-	req.model = self.model
+	req.model = _model
 	assert(req.model in provider.model_slugs)
 	
 	# Dynamically generate schema if target_resource is not null
@@ -44,10 +84,17 @@ func send_request(request : LanguageModelRequest):
 	
 	# Use provider to format request
 	var body = provider.stringify_request_body(request)
-	var headers = PackedStringArray([
+	
+	# Check if provider has custom headers method, otherwise use default
+	var headers : PackedStringArray
+	if provider.has_method("get_headers"):
+		headers = provider.get_headers(provider.api_key)
+	else:
+		headers = PackedStringArray([
 		"Content-Type: application/json",
 		"Authorization: Bearer " + provider.api_key
 	])
+	
 	var url = provider.request_url(request)
 	
 	# Send the request
@@ -91,12 +138,25 @@ func _on_request_completed(result, response_code, headers, body, request_id):
 		emit_signal("request_failed", "Failed to parse JSON response", request_id)
 		return
 	
+	# Normalize response if provider has a normalize_response method
+	if provider.has_method("normalize_response"):
+		json = provider.normalize_response(json)
+	
 	if target_resource != null:
 		# Extract content from the LLM response
-		var content = json.choices[0].message.content
-		# Convert the content to a resource using our schema
-		var resource = parse_response_with_schema(content)
-		emit_signal("request_completed", resource, request_id)
+		var resources = []
+		for choice in json.choices:
+			var content = choice.message.content
+			# Convert the content to a resource using our schema
+			var resource = parse_response_with_schema(content)
+			if resource != null:
+				resources.append(resource)
+		
+		# If only one choice was requested, return single resource for backward compatibility
+		if resources.size() == 1:
+			emit_signal("request_completed", resources[0], request_id)
+		else:
+			emit_signal("request_completed", resources, request_id)
 	else:
 		# Just return the raw JSON response
 		emit_signal("request_completed", json, request_id)

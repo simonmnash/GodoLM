@@ -38,10 +38,6 @@ func stringify_request_body(request : LanguageModelRequest) -> String:
 		}
 	return JSON.stringify(body)
 
-# Parse LLM response (to be extended by specific providers)
-static func parse_llm_response(response_text: String) -> String:
-	return response_text
-
 # Extract JSON from text response (to be extended by specific providers)
 static func extract_json(text: String):
 	# Try normal parsing first

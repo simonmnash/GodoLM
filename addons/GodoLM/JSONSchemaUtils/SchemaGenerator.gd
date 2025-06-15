@@ -7,6 +7,7 @@ const _TYPE_MAP := {
 	TYPE_INT:     "integer",
 	TYPE_FLOAT:   "number",
 	TYPE_COLOR:   "string",
+	TYPE_ARRAY:   "array"
 }
 
 static func _is_editor_prop(prop: Dictionary, res: Resource) -> bool:
@@ -28,7 +29,10 @@ static func _is_editor_prop(prop: Dictionary, res: Resource) -> bool:
 static func _to_hex(c: Color) -> String:
 	return "#" + c.to_html(false)
 
-static func json_dict(res: Resource) -> Dictionary:
+static func json_dict(res: Resource, max_recursion: int = 4) -> Dictionary:
+	if max_recursion <= 0:
+		return {}
+		
 	var result := {}
 	
 	for p in res.get_property_list():
@@ -40,12 +44,24 @@ static func json_dict(res: Resource) -> Dictionary:
 		# Handle special types
 		if p.type == TYPE_COLOR:
 			val = _to_hex(val)
+		# Handle Resource objects recursively
+		elif val is Resource:
+			val = json_dict(val, max_recursion - 1)
+		# Handle arrays that might contain resources
+		elif val is Array:
+			var new_array = []
+			for item in val:
+				if item is Resource:
+					new_array.append(json_dict(item, max_recursion - 1))
+				else:
+					new_array.append(item)
+			val = new_array
 			
 		result[p.name] = val
 	
 	return result
 
-static func schema(res: Resource) -> Dictionary:
+static func schema(res: Resource, max_recursion: int = 4) -> Dictionary:
 	var schema := {
 		"type": "object",
 		"properties": {},
@@ -57,25 +73,102 @@ static func schema(res: Resource) -> Dictionary:
 		if not _is_editor_prop(p, res):
 			continue
 		
+		if not (res.get_script().has_source_code() and "PROPERTY_DESCRIPTIONS" in res and res.PROPERTY_DESCRIPTIONS.has(p.name)):
+			continue
+		
 		# Get JSON type for this property
 		var json_type = _TYPE_MAP.get(p.type, "string")
 		var prop_schema := {"type": json_type}
+		prop_schema["description"] = res.PROPERTY_DESCRIPTIONS[p.name]
 		
-		# Try to pull description from hint_string/tooltips
-		if p.has("hint_string") and String(p.hint_string) != "":
-			prop_schema["description"] = String(p.hint_string)
-		# Fallback to constant dictionary
-		elif res.get_script().has_source_code() and "PROPERTY_DESCRIPTIONS" in res and res.PROPERTY_DESCRIPTIONS.has(p.name):
+		# Handle arrays by defining the items property. We will only ever deal with typed arrays.
+		if json_type == "array":
+			# Get the class type from hint_string if available
+			var array_class = p.hint_string.split(":", true, 1)[1].strip_edges()
+			
+			# Check if we've reached the recursion limit
+			if max_recursion <= 0:
+				# At max recursion, all arrays should be empty
+				prop_schema["items"] = {
+					"type": "object",
+					"properties": {},
+					"required": [],
+					"additionalProperties": false
+				}
+				# Add default empty array
+				# prop_schema["default"] = []
+			else:
+				# Try to find the class using ProjectSettings
+				var script_path = ""
+				var global_classes = ProjectSettings.get_global_class_list()
+				
+				if global_classes:
+					for script_class in global_classes:
+						if script_class["class"] == array_class:
+							script_path = script_class["path"]
+							break
+				
+				if script_path:
+					# Found the script path, load it and instantiate
+					var script = load(script_path)
+					if script:
+						var instance = script.new()
+						# Recursive call with decremented max_recursion
+						prop_schema["items"] = schema(instance, max_recursion - 1)
+		# Handle individual Resource properties
+		elif p.type == TYPE_OBJECT and p.hint_string != "":
+			var resource_class = p.hint_string.strip_edges()
+			
+			# Check if we've reached the recursion limit
+			if max_recursion <= 0:
+				# At max recursion, return empty object schema
+				prop_schema = {
+					"type": "object",
+					"properties": {},
+					"required": [],
+					"additionalProperties": false
+				}
+			else:
+				# Try to find the class using ProjectSettings
+				var script_path = ""
+				var global_classes = ProjectSettings.get_global_class_list()
+				
+				if global_classes:
+					for script_class in global_classes:
+						if script_class["class"] == resource_class:
+							script_path = script_class["path"]
+							break
+				
+				if script_path:
+					# Found the script path, load it and instantiate
+					var script = load(script_path)
+					if script:
+						var instance = script.new()
+						# Recursive call with decremented max_recursion
+						prop_schema = schema(instance, max_recursion - 1)
+				else:
+					# Fallback to basic object if class not found
+					prop_schema["type"] = "object"
+			
+			# Add the description
 			prop_schema["description"] = res.PROPERTY_DESCRIPTIONS[p.name]
-		
-		# Add helpful description for Color if not already set
-		if p.type == TYPE_COLOR and not prop_schema.has("description"):
-			prop_schema["description"] = "Color in hex format (e.g. #0080FF)"
 		
 		schema.properties[p.name] = prop_schema
 		schema.required.append(p.name)
 	
-	return schema 
+	# Add reflection rubric if present
+	if res.has_method("get_script") and res.get_script() != null:
+		if "REFLECTION_RUBRIC" in res:
+			var rubric = res.REFLECTION_RUBRIC
+			for criterion_key in rubric:
+				var criterion_schema = {
+					"type": "boolean",
+					"description": rubric[criterion_key]
+				}
+				schema.properties[criterion_key] = criterion_schema
+				schema.required.append(criterion_key)
+	
+	return schema
 
 # Helper function to remove JavaScript-style comments from JSON
 static func _remove_comments_from_json(json_str: String) -> String:
@@ -198,15 +291,96 @@ static func from_json(json_data, resource_type, default_values := {}) -> Resourc
 	
 	if parsed_data.is_empty():
 		return res
-		
+	
+	# Extract rubric results if present
+	var rubric_results = {}
+	if resource_type.has_method("new") and "REFLECTION_RUBRIC" in resource_type:
+		for criterion_key in resource_type.REFLECTION_RUBRIC:
+			if parsed_data.has(criterion_key):
+				rubric_results[criterion_key] = parsed_data.get(criterion_key)
+	
 	# Apply properties based on the parsed data
 	for prop in res.get_property_list():
 		if not _is_editor_prop(prop, res):
 			continue
-			
 		if parsed_data.has(prop.name):
-			res.set(prop.name, parsed_data.get(prop.name))
+			var value = parsed_data.get(prop.name)
+			# Handle arrays specially
+			if prop.type == TYPE_ARRAY and ":" in prop.hint_string:
+				var array_class = prop.hint_string.split(":", true, 1)[1].strip_edges()
+				
+				# Try to find the class script
+				var script_path = ""
+				var global_classes = ProjectSettings.get_global_class_list()
+				
+				if global_classes:
+					for script_class in global_classes:
+						if script_class["class"] == array_class:
+							script_path = script_class["path"]
+							break
+				
+				if script_path and value is Array:
+					var script = load(script_path)
+					if script:
+						# Instead of creating a new array, modify the existing one
+						# First, clear the existing array
+						var existing_array = res.get(prop.name)
+						
+						# If array is null or not an array, initialize it
+						if not existing_array is Array:
+							print("Property doesn't contain an array, creating one")
+							existing_array = []
+							res.set(prop.name, existing_array)
+						
+						# Convert and add each item to the existing array
+						for item in value:
+							# Recursively convert each item
+							var resource_item = from_json(item, script)
+							
+							# Try different approaches to add the item
+							# 1. Try to modify the existing array directly
+							var array_to_modify = res.get(prop.name)
+							if array_to_modify is Array:
+								array_to_modify.append(resource_item)
+								
+								# Check if the item was added
+							else:
+								print("WARNING: Could not access array properly, trying direct set")
+								# 2. Try direct set as fallback
+								res.set(prop.name, [resource_item])
+			# Handle individual Resource properties
+			elif prop.type == TYPE_OBJECT and prop.hint_string != "" and value is Dictionary:
+				var resource_class = prop.hint_string.strip_edges()
+				
+				# Try to find the class script
+				var script_path = ""
+				var global_classes = ProjectSettings.get_global_class_list()
+				
+				if global_classes:
+					for script_class in global_classes:
+						if script_class["class"] == resource_class:
+							script_path = script_class["path"]
+							break
+				
+				if script_path:
+					var script = load(script_path)
+					if script:
+						# Recursively convert the dictionary to a Resource
+						var resource_item = from_json(value, script)
+						res.set(prop.name, resource_item)
+			else:
+				# Non-array, non-Resource property, set directly
+				res.set(prop.name, value)
 		elif default_values.has(prop.name):
 			res.set(prop.name, default_values.get(prop.name))
+	
+	# Final verification
+	for prop in res.get_property_list():
+		if _is_editor_prop(prop, res) and prop.type == TYPE_ARRAY:
+			var arr = res.get(prop.name)
+	
+	# Store rubric results as metadata if any were found
+	if not rubric_results.is_empty():
+		res.set_meta("_rubric_results", rubric_results)
 	
 	return res 
